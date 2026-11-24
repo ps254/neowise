@@ -8,7 +8,8 @@
     body { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; font: 1rem/1.5 system-ui, sans-serif; }
     textarea { box-sizing: border-box; display: block; width: 100%; margin: .5rem 0; padding: .5rem; font: inherit; }
     button { padding: .4rem .8rem; font: inherit; }
-    pre { white-space: pre-wrap; }
+    #result { margin-top: 1rem; }
+    #draft { white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -18,18 +19,63 @@
     <textarea id="message" rows="4"></textarea>
     <button type="submit">Разобрать заявку</button>
   </form>
-  <pre id="result" aria-live="polite"></pre>
+  <section id="result" aria-live="polite">
+    <p id="notice"></p>
+    <p id="topic" hidden></p>
+    <h2 id="draft-heading" hidden>Черновик ответа</h2>
+    <p id="draft" hidden></p>
+  </section>
   <script type="module">
+    const TOPICS = {
+      delivery: "Доставка",
+      pricing: "Стоимость",
+      other: "Другое",
+    };
+
     const form = document.querySelector("form");
-    const result = document.querySelector("#result");
+    const notice = document.querySelector("#notice");
+    const topic = document.querySelector("#topic");
+    const draftHeading = document.querySelector("#draft-heading");
+    const draft = document.querySelector("#draft");
+
+    function clearResult() {
+      notice.textContent = "";
+      topic.textContent = "";
+      draft.textContent = "";
+      topic.hidden = true;
+      draftHeading.hidden = true;
+      draft.hidden = true;
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const reply = await fetch("/api/triage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: document.querySelector("#message").value }),
-      });
-      result.textContent = JSON.stringify(await reply.json(), null, 2);
+      clearResult();
+      notice.textContent = "Разбираем заявку…";
+      try {
+        const reply = await fetch("/api/triage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: document.querySelector("#message").value }),
+        });
+        const payload = await reply.json();
+        clearResult();
+        if (payload.status === "ready") {
+          topic.hidden = false;
+          draftHeading.hidden = false;
+          draft.hidden = false;
+          topic.textContent = `Тема: ${TOPICS[payload.topic] ?? payload.topic}`;
+          draft.textContent = payload.draft;
+          return;
+        }
+        if (payload.status === "invalid_input") {
+          notice.textContent = "Введите текст заявки — пустое сообщение разобрать нельзя.";
+          return;
+        }
+        notice.textContent = "Автоматический разбор не получился. Разберите заявку вручную. Предыдущий черновик очищен, не отправляйте его клиенту.";
+      } catch {
+        clearResult();
+        notice.textContent = "Не удалось связаться с сервером. Разберите заявку вручную. Предыдущий черновик очищен.";
+      }
     });
   </script>
 </body>
